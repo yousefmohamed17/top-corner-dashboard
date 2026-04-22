@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Store, CreditCard, CheckCircle, Truck, DollarSign, Percent, Mail, Settings2, MapPin, Users, Plus, Trash2, Search, ChevronDown, Check, Ban, Image as ImageIcon, Shirt } from 'lucide-react';
+// ضفنا ShieldCheck واستغنينا عن أيقونات الإضافة والحذف
+import { Store, CreditCard, CheckCircle, Truck, DollarSign, Percent, Mail, Settings2, MapPin, ShieldCheck, Search, ChevronDown, Check, Ban, Image as ImageIcon, Shirt, AlertTriangle } from 'lucide-react';
+
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase'; 
 
 const egyptGovernorates = [
   "القاهرة", "الإسكندرية", "الجيزة", "الدقهلية", "البحر الأحمر", "البحيرة", "الفيوم", "الغربية", "الإسماعيلية", "المنوفية", "المنيا", "القليوبية", "الوادي الجديد", "الشرقية", "السويس", "أسوان", "أسيوط", "بني سويف", "دمياط", "كفر الشيخ", "مطروح", "الأقصر", "قنا", "شمال سيناء", "جنوب سيناء", "بورسعيد", "سوهاج"
@@ -12,29 +16,47 @@ const Settings = ({ shopSettings, setShopSettings }) => {
     storeLocation: shopSettings.storeLocation || "القاهرة",
     shippingRates: shopSettings.shippingRates || {},
     disabledRegions: shopSettings.disabledRegions || [], 
-    admins: shopSettings.admins || [shopSettings.email],
+    // بنخليها دايماً Array فيها إيميل واحد بس عشان باقي النظام ميكراشش
+    admins: shopSettings.admins?.length ? shopSettings.admins : [shopSettings.email || ''], 
     storeLogo: shopSettings.storeLogo || '', 
   });
 
   const [isSaved, setIsSaved] = useState(false);
-  const [newAdminEmail, setNewAdminEmail] = useState('');
   const [shippingSearch, setShippingSearch] = useState('');
   
   const [isLocOpen, setIsLocOpen] = useState(false);
   const [isCurrOpen, setIsCurrOpen] = useState(false);
   const [isShippingOpen, setIsShippingOpen] = useState(false);
 
-  const handleSave = (e) => {
-    if (e) e.preventDefault();
-    setShopSettings(formData);
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 1500);
-  };
+  // Custom Toasts
+  const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
-  const addAdmin = () => {
-    if (newAdminEmail && !formData.admins.includes(newAdminEmail)) {
-      setFormData({ ...formData, admins: [...formData.admins, newAdminEmail] });
-      setNewAdminEmail('');
+  const triggerSuccess = (msg) => { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(''), 6000); };
+  const triggerError = (msg) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 4000); };
+
+  // دالة الحفظ الشاملة 
+  const handleSave = async (e) => {
+    if (e) e.preventDefault();
+    
+    // التأكد إن الإيميل مش فاضي
+    if (!formData.admins[0]) {
+      triggerError("يرجى إدخال إيميل المسؤول الأساسي!");
+      return;
+    }
+
+    setShopSettings(formData);
+    localStorage.setItem('shopSettings', JSON.stringify(formData));
+    
+    try {
+      const settingsRef = doc(db, 'settings', 'shopSettings'); 
+      await updateDoc(settingsRef, formData);
+      
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 1500);
+    } catch (error) {
+      triggerError('حدث خطأ أثناء حفظ الإعدادات في قاعدة البيانات.');
+      console.error(error);
     }
   };
 
@@ -46,15 +68,12 @@ const Settings = ({ shopSettings, setShopSettings }) => {
     }
   };
 
-  // تعديل رفع اللوجو: للمعاينة فقط بدون حفظ تلقائي
   const handleLogoChange = (e) => {
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (event) => {
         const img = new Image();
-        
-        // الترتيب الصحيح: لازم onload تتكتب قبل ما نمرر الـ src
         img.onload = () => {
           const canvas = document.createElement('canvas');
           const MAX_SIZE = 200; 
@@ -69,12 +88,9 @@ const Settings = ({ shopSettings, setShopSettings }) => {
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
-          
           const newLogo = canvas.toDataURL('image/png');
-          // هنا بنعدل الفورم داتا بس للمعاينة (مش بنعمل setShopSettings)
           setFormData({...formData, storeLogo: newLogo});
         };
-        
         img.src = event.target.result;
       };
       reader.readAsDataURL(file);
@@ -83,11 +99,6 @@ const Settings = ({ shopSettings, setShopSettings }) => {
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
-      if (e.target.placeholder === 'Add email...') {
-        e.preventDefault();
-        addAdmin();
-        return;
-      }
       if (e.target.placeholder === 'Find province...') {
         e.preventDefault();
         return;
@@ -107,7 +118,21 @@ const Settings = ({ shopSettings, setShopSettings }) => {
       className="space-y-8 p-4 max-w-4xl mx-auto relative w-full pb-20 font-sans outline-none" 
       onKeyDown={handleKeyDown} 
     >
-      
+      {/* Floating Toasts */}
+      <AnimatePresence>
+        {successMsg && (
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] bg-green-600 text-white px-6 py-3 lg:px-8 lg:py-4 rounded-2xl font-black shadow-2xl flex items-center gap-3 text-xs lg:text-sm whitespace-nowrap">
+            <CheckCircle size={18} /> {successMsg}
+          </motion.div>
+        )}
+        {errorMsg && (
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] bg-red-600 text-white px-6 py-3 lg:px-8 lg:py-4 rounded-2xl font-black shadow-2xl flex items-center gap-3 text-xs lg:text-sm whitespace-nowrap">
+            <AlertTriangle size={18} /> {errorMsg}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Save Success Modal */}
       <AnimatePresence>
         {isSaved && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -138,16 +163,15 @@ const Settings = ({ shopSettings, setShopSettings }) => {
       </header>
 
       <form onSubmit={handleSave} className="space-y-8">
-        
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           
+          {/* Store Profile */}
           <div className="bg-[#111] p-8 rounded-[2.5rem] border border-white/5 shadow-2xl relative flex flex-col h-full">
             <div className="flex items-center gap-3 mb-6 text-white font-black text-lg italic uppercase tracking-tighter border-b border-white/5 pb-4">
               <Store className="text-blue-500" size={22} /> Store Profile
             </div>
             
             <div className="space-y-6 flex-1 flex flex-col justify-start">
-              
               <div>
                 <label className="text-[10px] text-gray-500 uppercase font-black mb-3 flex items-center gap-1.5 tracking-widest px-1"><ImageIcon size={12}/> Store Logo</label>
                 <div className="flex items-center gap-4">
@@ -159,17 +183,14 @@ const Settings = ({ shopSettings, setShopSettings }) => {
                     <input type="file" className="hidden" accept="image/*" onChange={handleLogoChange}/>
                   </label>
                   {formData.storeLogo && (
-                    <button type="button" onClick={() => {
-                      setFormData({...formData, storeLogo: ''});
-                      // شيلنا الحفظ التلقائي من هنا برضه عشان يمسح كمعاينة بس
-                    }} className="text-gray-600 hover:text-red-500 hover:bg-red-500/10 p-3 rounded-xl transition-colors"><Trash2 size={16}/></button>
+                    <button type="button" onClick={() => setFormData({...formData, storeLogo: ''})} className="text-gray-600 hover:text-red-500 hover:bg-red-500/10 p-3 rounded-xl transition-colors"><Trash2 size={16}/></button>
                   )}
                 </div>
               </div>
 
               <div>
                 <label className="text-[10px] text-gray-500 uppercase font-black mb-2 flex items-center gap-1.5 tracking-widest px-1"><Mail size={12}/> Store Name</label>
-                <input required type="text" value={formData.storeName} onChange={(e) => setFormData({...formData, storeName: e.target.value})} className="w-full bg-black border border-white/10 rounded-xl px-5 py-3.5 text-white outline-none focus:border-blue-600 transition-all font-bold text-sm" />
+                <input required type="text" value={formData.storeName || ''} onChange={(e) => setFormData({...formData, storeName: e.target.value})} className="w-full bg-black border border-white/10 rounded-xl px-5 py-3.5 text-white outline-none focus:border-blue-600 transition-all font-bold text-sm" />
               </div>
 
               <div className="relative mt-auto">
@@ -193,6 +214,7 @@ const Settings = ({ shopSettings, setShopSettings }) => {
             </div>
           </div>
 
+          {/* Payments & Access */}
           <div className="bg-[#111] p-8 rounded-[2.5rem] border border-white/5 shadow-2xl relative flex flex-col h-full">
             <div className="flex items-center gap-3 mb-6 text-white font-black text-lg italic uppercase tracking-tighter border-b border-white/5 pb-4">
               <CreditCard className="text-blue-500" size={22} /> Payments & Access
@@ -203,7 +225,7 @@ const Settings = ({ shopSettings, setShopSettings }) => {
                 <div className="relative">
                   <label className="text-[10px] text-gray-500 uppercase font-black mb-2 tracking-widest px-1">Currency</label>
                   <button type="button" onClick={() => setIsCurrOpen(!isCurrOpen)} className="w-full bg-black border border-white/10 rounded-xl px-4 py-3.5 text-white flex justify-between items-center font-bold text-xs uppercase tracking-widest hover:border-blue-600/50 transition-all">
-                    {formData.currency}
+                    {formData.currency || 'E.G'}
                     <ChevronDown size={14} className="text-gray-500" />
                   </button>
                   <AnimatePresence>
@@ -220,33 +242,33 @@ const Settings = ({ shopSettings, setShopSettings }) => {
                 </div>
                 <div>
                   <label className="text-[10px] text-gray-500 uppercase font-black mb-2 tracking-widest px-1">Tax (%)</label>
-                  <input required type="number" value={formData.tax} onChange={(e) => setFormData({...formData, tax: Number(e.target.value)})} className={`w-full bg-black border border-white/10 rounded-xl px-4 py-3.5 text-white font-bold text-sm outline-none focus:border-blue-600 transition-all ${hideSpinners}`} />
+                  <input required type="number" value={formData.tax || 0} onChange={(e) => setFormData({...formData, tax: Number(e.target.value)})} className={`w-full bg-black border border-white/10 rounded-xl px-4 py-3.5 text-white font-bold text-sm outline-none focus:border-blue-600 transition-all ${hideSpinners}`} />
                 </div>
               </div>
 
+              {/* Master Admin Account Section */}
               <div className="mt-auto">
-                <label className="text-[10px] text-gray-500 uppercase font-black mb-2 flex items-center gap-1.5 tracking-widest px-1"><Users size={12}/> Admins</label>
-                <div className="flex gap-2 mb-3">
-                  <input type="email" placeholder="Add email..." value={newAdminEmail} onChange={(e) => setNewAdminEmail(e.target.value)} className="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-[10px] text-white outline-none focus:border-blue-600" />
-                  <button type="button" onClick={addAdmin} className="bg-blue-600 p-2 rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20"><Plus size={16}/></button>
-                </div>
-                <div className={`max-h-[88px] ${scrollbarClass} space-y-2`}>
-                  {formData.admins.map(adm => (
-                    <div key={adm} className="bg-black/40 border border-white/5 px-4 py-2 rounded-xl flex justify-between items-center group hover:border-white/10 transition-colors">
-                      <span className="text-[9px] font-bold text-gray-400">{adm}</span>
-                      {adm !== shopSettings.email && (
-                        <button type="button" onClick={() => setFormData({...formData, admins: formData.admins.filter(a => a !== adm)})} className="text-gray-600 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={12}/></button>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <label className="text-[10px] text-gray-500 uppercase font-black mb-2 flex items-center gap-1.5 tracking-widest px-1">
+                  <ShieldCheck size={12}/> Master Admin Account
+                </label>
+                <input 
+                  type="email" 
+                  required
+                  placeholder="admin@store.com"
+                  value={formData.admins[0] || ''} 
+                  onChange={(e) => setFormData({...formData, admins: [e.target.value.toLowerCase().trim()]})} 
+                  className="w-full bg-black border border-white/10 rounded-xl px-5 py-3.5 text-white outline-none focus:border-blue-600 transition-all font-bold text-sm" 
+                />
+                <p className="text-[9px] text-gray-500 mt-3 px-1 leading-relaxed">
+                  هذا هو حساب المسؤول الأساسي. يمكنك تسجيل الدخول بهذا الإيميل من أي جهاز (موبايل أو لابتوب) لإدارة المتجر بالكامل.
+                </p>
               </div>
             </div>
           </div>
         </div>
 
+        {/* Shipping Rates */}
         <div className="bg-[#111] p-8 rounded-[2.5rem] border border-white/5 shadow-2xl relative overflow-hidden transition-all duration-500">
-          
           <button 
             type="button" 
             onClick={() => setIsShippingOpen(!isShippingOpen)}
@@ -293,7 +315,7 @@ const Settings = ({ shopSettings, setShopSettings }) => {
                             <span className="text-[11px] font-black text-gray-300 uppercase tracking-tighter group-hover:text-white transition-colors">{gov}</span>
                           </div>
                           <div className="flex items-center gap-2 w-28 relative">
-                            <span className="absolute left-3 text-[10px] font-black text-blue-500/50">{formData.currency}</span>
+                            <span className="absolute left-3 text-[10px] font-black text-blue-500/50">{formData.currency || 'E.G'}</span>
                             <input 
                               type="number" 
                               disabled={!isEnabled}

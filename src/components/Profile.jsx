@@ -509,14 +509,17 @@ const Profile = ({ isAdmin, shopSettings }) => {
         </form>
       </div>
 
-      <div className="flex justify-center mt-6">
-        <button 
-          onClick={() => setIsDeleteModalOpen(true)}
-          className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-red-500/5 hover:bg-red-500/10 text-red-500/70 hover:text-red-500 text-[10px] font-black uppercase tracking-widest border border-red-500/10 hover:border-red-500/30 transition-all"
-        >
-          <Trash2 size={16} /> Delete My Account
-        </button>
-      </div>
+      {/* إخفاء زرار الحذف للأدمن */}
+      {!isAdmin && (
+        <div className="flex justify-center mt-6">
+          <button 
+            onClick={() => setIsDeleteModalOpen(true)}
+            className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-red-500/5 hover:bg-red-500/10 text-red-500/70 hover:text-red-500 text-[10px] font-black uppercase tracking-widest border border-red-500/10 hover:border-red-500/30 transition-all"
+          >
+            <Trash2 size={16} /> Delete My Account
+          </button>
+        </div>
+      )}
 
       <AnimatePresence>
         {isDeleteModalOpen && (
