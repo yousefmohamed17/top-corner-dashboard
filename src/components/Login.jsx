@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, LogIn, UserPlus, AlertTriangle, KeyRound, X, CheckCircle, User, Phone, Camera, Loader, Store, Send, RefreshCw, ArrowLeft, AtSign } from 'lucide-react';
+import { Mail, Lock, LogIn, UserPlus, AlertTriangle, KeyRound, X, CheckCircle, User, Phone, Camera, Loader, Store, Send, RefreshCw, AtSign } from 'lucide-react';
 
 import { auth, db, googleProvider, facebookProvider } from '../firebase';
 import { 
@@ -184,7 +184,7 @@ const Login = ({ shopSettings }) => {
   };
 
   const handleUsernameChange = (e) => {
-    const val = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const val = e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '');
     setUsername(val);
   };
 
@@ -194,7 +194,6 @@ const Login = ({ shopSettings }) => {
     const docRef = doc(db, 'users', user.uid);
     const docSnap = await getDoc(docRef);
     
-    // شيلنا كود الطرد من هنا وهنسيب App.jsx هو اللي يمسك المحظورين
     if (docSnap.exists() && docSnap.data().isBlocked) {
        return; 
     }
@@ -233,8 +232,15 @@ const Login = ({ shopSettings }) => {
     if (!isLogin && phone && phone.length !== 11) {
       setError("رقم الموبايل يجب أن يتكون من 11 رقم بالضبط!"); return;
     }
-    if (!isLogin && username.length < 3) {
-      setError("اسم المستخدم يجب أن يكون 3 أحرف على الأقل."); return;
+    
+    if (!isLogin && username) {
+      // التعديل: التأكد من إن اليوزرنيم بين 7 و 15 حرف
+      if (username.length < 7 || username.length > 15) {
+        setError("اسم المستخدم يجب أن يكون بين 7 و 15 حرف/رقم."); return;
+      }
+      if (!/[a-z]/.test(username) || !/[0-9]/.test(username)) {
+        setError("اسم المستخدم يجب أن يحتوي على حروف وأرقام معاً."); return;
+      }
     }
 
     setIsLoading(true);
@@ -245,6 +251,7 @@ const Login = ({ shopSettings }) => {
       } else {
         const deletedRef = doc(db, 'deleted_accounts', email.toLowerCase());
         const deletedSnap = await getDoc(deletedRef);
+        
         if (deletedSnap.exists()) {
           const days = Math.ceil(30 - (Date.now() - deletedSnap.data().deletedAt) / (1000 * 60 * 60 * 24));
           if (days > 0) throw new Error(`لا يمكنك التسجيل بهذا البريد حالياً. يرجى المحاولة بعد ${days} يوم.`);
@@ -422,7 +429,16 @@ const Login = ({ shopSettings }) => {
 
                 <div className="relative">
                   <AtSign className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
-                  <input type="text" required placeholder="Username (e.g. user123)" value={username} onChange={handleUsernameChange} className={inputClasses} />
+                  <input 
+                    type="text" 
+                    required 
+                    placeholder="Username (e.g. user123)" 
+                    value={username} 
+                    onChange={handleUsernameChange} 
+                    minLength={7}
+                    maxLength={15} 
+                    className={inputClasses} 
+                  />
                 </div>
 
                 <div className="relative">
