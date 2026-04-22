@@ -199,16 +199,31 @@ const Login = ({ shopSettings }) => {
     }
     
     if (!docSnap.exists()) {
+      // نظام استرجاع البيانات الذكي (لو اليوزر عمل ريفريش أثناء التفعيل)
+      let pendingReg = {};
+      try {
+        const saved = localStorage.getItem('pendingReg');
+        if (saved) pendingReg = JSON.parse(saved);
+      } catch(e) {}
+
+      const finalName = tempName || pendingReg.name || user.displayName || 'User';
+      const finalPhone = tempPhone || pendingReg.phone || '';
+      const finalPhoto = tempPhoto || pendingReg.photoURL || user.photoURL || '';
+      const finalUsername = tempUsername || pendingReg.username || `user_${Math.floor(Math.random()*10000)}`;
+
       await setDoc(docRef, {
-        name: user.displayName || tempName || 'User',
-        username: tempUsername || `user_${Math.floor(Math.random()*10000)}`,
+        name: finalName,
+        username: finalUsername,
         email: user.email,
-        photo: user.photoURL || tempPhoto || '',
-        phone: tempPhone || '',
+        photo: finalPhoto,
+        phone: finalPhone,
         createdAt: Date.now(),
         isBlocked: false,
         isPhoneVerified: false
       });
+
+      // مسح البيانات بعد ما تم الحفظ بنجاح
+      localStorage.removeItem('pendingReg');
     }
   };
 
@@ -234,7 +249,6 @@ const Login = ({ shopSettings }) => {
     }
     
     if (!isLogin && username) {
-      // التعديل: التأكد من إن اليوزرنيم بين 7 و 15 حرف
       if (username.length < 7 || username.length > 15) {
         setError("اسم المستخدم يجب أن يكون بين 7 و 15 حرف/رقم."); return;
       }
@@ -259,10 +273,14 @@ const Login = ({ shopSettings }) => {
 
         await checkUniqueness();
 
+        // التعديل: حفظ البيانات مؤقتاً عشان لو عمل ريفريش أثناء تفعيل الإيميل
+        localStorage.setItem('pendingReg', JSON.stringify({ name, phone, photoURL, username }));
+
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
 
-        try { await updateProfile(user, { displayName: name, photoURL: photoURL }); } catch(e) {}
+        // التعديل: نحدث الاسم بس في Auth عشان مساحة الصورة بتعمل كراش
+        try { await updateProfile(user, { displayName: name }); } catch(e) {}
         
         await sendEmailVerification(user);
         setIsWaitingForEmail(true);
