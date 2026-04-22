@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShoppingBag, CheckCircle, Loader, Package, Truck, Clock, ShoppingCart, Trash2, Plus, Minus, MapPin, CalendarClock, Map, Flame, ChevronDown, X, Search, AlertTriangle, CheckSquare } from 'lucide-react';
 import { db } from '../firebase';
-import { collection, onSnapshot, addDoc, doc, updateDoc, query, where, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, doc, updateDoc, query, where } from 'firebase/firestore';
 
 const egyptGovernorates = [
   "القاهرة", "الإسكندرية", "الجيزة", "الدقهلية", "البحر الأحمر", "البحيرة", "الفيوم", "الغربية", "الإسماعيلية", "المنوفية", "المنيا", "القليوبية", "الوادي الجديد", "الشرقية", "السويس", "أسوان", "أسيوط", "بني سويف", "دمياط", "كفر الشيخ", "مطروح", "الأقصر", "قنا", "شمال سيناء", "جنوب سيناء", "بورسعيد", "سوهاج"
@@ -52,28 +52,29 @@ const Storefront = ({ shopSettings, userEmail }) => {
     localStorage.setItem(`cart_${userEmail}`, JSON.stringify(cart));
   }, [cart, userEmail]);
 
+  // ==========================================
+  // التعديل اللحظي: مراقبة بيانات العميل لايف
+  // ==========================================
   useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        const q = query(collection(db, 'users'), where('email', '==', userEmail));
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          const userData = querySnapshot.docs[0].data();
-          if (userData.address) setAddress(userData.address);
-          if (userData.phone) setPhone(userData.phone);
-          
-          // التعديل: المحافظة هتتساب زي ما هي حتى لو محظورة عشان يظهرله التحذير!
-          if (userData.region) {
-            setRegion(userData.region);
-          } else {
-            setRegion(storeLocation || egyptGovernorates[0]);
-          }
+    if (!userEmail) return;
+
+    const q = query(collection(db, 'users'), where('email', '==', userEmail));
+    const unsubUser = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        const userData = snapshot.docs[0].data();
+        if (userData.address) setAddress(userData.address);
+        if (userData.phone) setPhone(userData.phone);
+        
+        // المحافظة بتسحب لايف وبتفضل زي ما هي عشان يقدر يشوف التحذير لو محظورة
+        if (userData.region) {
+          setRegion(userData.region);
+        } else {
+          setRegion(storeLocation || egyptGovernorates[0]);
         }
-      } catch (error) {
-        console.error("Error fetching user data:", error);
       }
-    };
-    fetchUserData();
+    });
+
+    return () => unsubUser();
   }, [userEmail, storeLocation]);
 
   useEffect(() => {

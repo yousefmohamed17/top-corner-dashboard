@@ -13,7 +13,7 @@ import Customers from './components/Customers';
 
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore'; 
 
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -26,20 +26,20 @@ function App() {
 
   const MASTER_ADMIN = 'ym828816@gmail.com';
 
-  const [shopSettings, setShopSettings] = useState(() => {
-    const savedSettings = localStorage.getItem('shopSettings');
-    const defaultSettings = {
-      storeName: 'Top Corner',
-      currency: 'E.G',
-      email: 'support@topcorner.com',
-      tax: 14,
-      storeLocation: 'القاهرة',
-      shippingRates: {},
-      disabledRegions: [],
-      admins: [MASTER_ADMIN], 
-      storeLogo: ''
-    };
+  const defaultSettings = {
+    storeName: 'Top Corner',
+    currency: 'E.G',
+    email: 'support@topcorner.com',
+    tax: 14,
+    storeLocation: 'القاهرة',
+    shippingRates: {},
+    disabledRegions: [],
+    admins: [MASTER_ADMIN], 
+    storeLogo: ''
+  };
 
+  const [shopSettings, setShopSettingsState] = useState(() => {
+    const savedSettings = localStorage.getItem('shopSettings');
     if (savedSettings) {
       const parsed = JSON.parse(savedSettings);
       return { 
@@ -51,6 +51,38 @@ function App() {
     return defaultSettings;
   });
 
+  // ==========================================
+  // التعديل السحري: مزامنة إعدادات المتجر (ومنها قفل الشحن) لحظياً لكل العملاء
+  // ==========================================
+  useEffect(() => {
+    const unsubSettings = onSnapshot(doc(db, 'settings', 'shop'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setShopSettingsState({
+          ...defaultSettings,
+          ...data,
+          admins: data.admins?.includes(MASTER_ADMIN) ? data.admins : [...(data.admins || []), MASTER_ADMIN]
+        });
+      } else {
+        // إنشاء ملف الإعدادات في الداتابيز لأول مرة لو مش موجود
+        setDoc(doc(db, 'settings', 'shop'), shopSettings);
+      }
+    });
+    return () => unsubSettings();
+  }, []);
+
+  // دالة ذكية هتباصيها لصفحة Settings عشان لما الأدمن يعدل، ترمي في الداتابيز مباشرة
+  const handleUpdateSettings = async (newSettings) => {
+    const updated = typeof newSettings === 'function' ? newSettings(shopSettings) : newSettings;
+    setShopSettingsState(updated); // تحديث سريع للـ UI
+    try {
+      await setDoc(doc(db, 'settings', 'shop'), updated, { merge: true });
+    } catch (err) {
+      console.error("Error saving global settings:", err);
+    }
+  };
+
+  // مراقبة بيانات العميل والحظر
   useEffect(() => {
     let unsubStore = () => {}; 
 
@@ -131,9 +163,6 @@ function App() {
     return <div className="h-screen bg-[#0a0a0a] flex items-center justify-center text-white font-black italic text-2xl uppercase tracking-tighter animate-pulse">Loading System...</div>;
   }
 
-  // ==========================================
-  // الشاشة الحمرا (تم تكبير خط الزرار لـ text-sm)
-  // ==========================================
   if (isUserBlocked) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4 selection:bg-red-600 selection:text-white font-sans relative overflow-hidden" dir="rtl">
@@ -269,7 +298,8 @@ function App() {
             {isAdmin && activeTab === 'inventory' && <Inventory currency={shopSettings.currency} tax={shopSettings.tax} />}
             {isAdmin && activeTab === 'orders' && <Orders currency={shopSettings.currency} tax={shopSettings.tax} />}
             {isAdmin && activeTab === 'customers' && <Customers />} 
-            {isAdmin && activeTab === 'settings' && <Settings shopSettings={shopSettings} setShopSettings={setShopSettings} />}
+            {/* تمرير الدالة الجديدة عشان حفظ الإعدادات يرمي في الداتابيز مباشرة */}
+            {isAdmin && activeTab === 'settings' && <Settings shopSettings={shopSettings} setShopSettings={handleUpdateSettings} />}
             {isAdmin && activeTab === 'profile' && <Profile isAdmin={true} shopSettings={shopSettings} />}
             
             {activeTab === 'storefront' && <Storefront shopSettings={shopSettings} userEmail={currentUser.email} />}
