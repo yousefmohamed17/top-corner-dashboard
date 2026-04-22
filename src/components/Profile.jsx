@@ -85,6 +85,8 @@ const Profile = ({ isAdmin, shopSettings }) => {
           const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
           if (userDoc.exists()) {
             const data = userDoc.data();
+            // هنا كان السطر الناقص يا هندسة!
+            setName(data.name || auth.currentUser.displayName || '');
             setPhone(data.phone || '');
             setUsername(data.username || ''); 
             setAddress(data.address || '');
@@ -243,6 +245,7 @@ const Profile = ({ isAdmin, shopSettings }) => {
 
       try {
         await updateProfile(auth.currentUser, { displayName: name, photoURL: photoURL });
+        await auth.currentUser.reload(); // تأكيد التحديث في الجلسة الحالية
       } catch (err) {
         console.log("Auth profile update skipped, saving to Firestore only.");
       }
