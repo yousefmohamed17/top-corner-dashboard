@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Truck, Clock, CheckCircle, Loader, Trash2, AlertTriangle, X, MapPin, CalendarClock, Phone, Smartphone, ListFilter } from 'lucide-react';
+import { Truck, Clock, CheckCircle, Loader, Trash2, AlertTriangle, Phone, Smartphone, ListFilter, MapPin, CalendarClock, CreditCard, Banknote } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, onSnapshot, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 
-const Orders = ({ currency, tax }) => {
+const Orders = ({ currency = 'E.G', tax = 14 }) => {
   const [orders, setOrders] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeFilter, setActiveFilter] = useState('All'); // 'All', 'Processing', 'Shipped', 'Delivered'
-  
+  const [activeFilter, setActiveFilter] = useState('All'); 
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, orderId: null });
 
   useEffect(() => {
@@ -46,12 +45,8 @@ const Orders = ({ currency, tax }) => {
     setDeleteModal({ isOpen: false, orderId: null });
   };
 
-  // تصفية الأوردرات بناءً على الفلتر المختار
-  const filteredOrders = activeFilter === 'All' 
-    ? orders 
-    : orders.filter(order => order.status === activeFilter);
+  const filteredOrders = activeFilter === 'All' ? orders : orders.filter(order => order.status === activeFilter);
 
-  // حساب الأعداد لكل حالة
   const stats = {
     All: orders.length,
     Processing: orders.filter(o => o.status === 'Processing').length,
@@ -67,16 +62,13 @@ const Orders = ({ currency, tax }) => {
           <p className="text-gray-500 font-bold mt-1 uppercase text-xs tracking-widest">Track customer purchases and locations.</p>
         </div>
 
-        {/* نظام الفلتر الجديد */}
         <div className="flex bg-[#111] border border-white/10 p-1.5 rounded-2xl w-full lg:w-auto overflow-x-auto no-scrollbar">
           {['All', 'Processing', 'Shipped', 'Delivered'].map((filter) => (
             <button
               key={filter}
               onClick={() => setActiveFilter(filter)}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
-                activeFilter === filter 
-                ? 'bg-blue-600 text-white shadow-lg' 
-                : 'text-gray-500 hover:text-gray-300'
+                activeFilter === filter ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'
               }`}
             >
               {filter}
@@ -149,24 +141,29 @@ const Orders = ({ currency, tax }) => {
                     </td>
                     
                     <td className="px-8 py-8 max-w-[250px]">
-                      <div 
-                        className="text-gray-400 text-xs lg:text-sm bg-white/5 border border-white/5 p-3 rounded-2xl leading-relaxed italic"
-                        title={order.items}
-                      >
+                      <div className="text-gray-400 text-xs lg:text-sm bg-white/5 border border-white/5 p-3 rounded-2xl leading-relaxed italic" title={order.items}>
                         {order.items}
                       </div>
                     </td>
 
                     <td className="px-8 py-8">
                       <div className="text-white font-black text-lg lg:text-xl tracking-tighter">{currency} {totalWithTax}</div>
-                      <div className="text-[9px] text-gray-500 uppercase font-black tracking-widest mt-1">Shipping: {order.shippingFee > 0 ? `${currency}${order.shippingFee}` : 'Free'}</div>
+                      <div className="text-[9px] text-gray-500 uppercase font-black tracking-widest mt-1 mb-2">Shipping: {order.shippingFee > 0 ? `${currency}${order.shippingFee}` : 'Free'}</div>
+                      
+                      {/* البادج بتاع طريقة الدفع */}
+                      {order.paymentMethod === 'COD' ? (
+                        <div className="inline-flex items-center gap-1 bg-orange-500/10 text-orange-500 border border-orange-500/20 px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest">
+                          <Banknote size={10}/> Cash on Delivery
+                        </div>
+                      ) : (
+                        <div className="inline-flex items-center gap-1 bg-green-500/10 text-green-500 border border-green-500/20 px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest">
+                          <CreditCard size={10}/> Paid via Card
+                        </div>
+                      )}
                     </td>
                     
                     <td className="px-8 py-8 text-center">
-                      <button 
-                        onClick={() => cycleStatus(order.id, order.status)}
-                        className="active:scale-95 transition-transform"
-                      >
+                      <button onClick={() => cycleStatus(order.id, order.status)} className="active:scale-95 transition-transform">
                         {order.status === 'Processing' && <span className="text-amber-500 bg-amber-500/10 border border-amber-500/20 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-amber-500 hover:text-white transition-all"><Clock size={14}/> Processing</span>}
                         {order.status === 'Shipped' && <span className="text-blue-500 bg-blue-500/10 border border-blue-500/20 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-blue-500 hover:text-white transition-all"><Truck size={14}/> Shipped</span>}
                         {order.status === 'Delivered' && <span className="text-green-500 bg-green-500/10 border border-green-500/20 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-green-500 hover:text-white transition-all"><CheckCircle size={14}/> Delivered</span>}
@@ -186,7 +183,6 @@ const Orders = ({ currency, tax }) => {
         )}
       </div>
 
-      {/* مودال الحذف (نفس الكود السابق مع تظبيط بسيط) */}
       <AnimatePresence>
         {deleteModal.isOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">

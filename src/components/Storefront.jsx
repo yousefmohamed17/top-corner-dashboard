@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingBag, CheckCircle, Loader, Package, Truck, Clock, ShoppingCart, Trash2, Plus, Minus, MapPin, CalendarClock, Map, Flame, ChevronDown, X, Search, AlertTriangle, CheckSquare } from 'lucide-react';
+import { ShoppingBag, CheckCircle, Loader, Package, Truck, Clock, ShoppingCart, Trash2, Plus, Minus, MapPin, CalendarClock, Flame, ChevronDown, X, Search, AlertTriangle, CheckSquare, CreditCard, Banknote } from 'lucide-react';
 import { db } from '../firebase';
-import { collection, onSnapshot, addDoc, doc, updateDoc, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, doc, updateDoc, query, where, getDoc } from 'firebase/firestore';
 
 const egyptGovernorates = [
   "القاهرة", "الإسكندرية", "الجيزة", "الدقهلية", "البحر الأحمر", "البحيرة", "الفيوم", "الغربية", "الإسماعيلية", "المنوفية", "المنيا", "القليوبية", "الوادي الجديد", "الشرقية", "السويس", "أسوان", "أسيوط", "بني سويف", "دمياط", "كفر الشيخ", "مطروح", "الأقصر", "قنا", "شمال سيناء", "جنوب سيناء", "بورسعيد", "سوهاج"
 ];
+
+const COD_FEE = 25; // مصاريف الدفع عند الاستلام
 
 const Storefront = ({ shopSettings, userEmail }) => {
   const { 
@@ -28,12 +30,14 @@ const Storefront = ({ shopSettings, userEmail }) => {
   const [isRegionDropdownOpen, setIsRegionDropdownOpen] = useState(false);
   const [govSearch, setGovSearch] = useState(''); 
 
+  const [paymentMethod, setPaymentMethod] = useState('Card'); // 'Card' أو 'COD'
+
   const [cart, setCart] = useState(() => {
     const savedCart = localStorage.getItem(`cart_${userEmail}`);
     return savedCart ? JSON.parse(savedCart) : [];
   });
 
-  const [userName, setUserName] = useState('Customer'); // حالة جديدة لتخزين اسم العميل لبيموب
+  const [userName, setUserName] = useState('Customer'); 
   const [address, setAddress] = useState('');
   const [region, setRegion] = useState(''); 
   const [phone, setPhone] = useState('');
@@ -46,49 +50,90 @@ const Storefront = ({ shopSettings, userEmail }) => {
   const displayedRegions = egyptGovernorates.filter(gov => gov.includes(govSearch));
   const isDeliveryDisabled = disabledRegions.includes(region) || !region;
 
+  // دالة تسجيل الأوردر الفعلي وخصم المخزون (عشان نستخدمها في الـ COD وفي الـ Callback بتاع الفيزا)
+  const finalizeOrderInDB = async (orderData, cartItems) => {
+    try {
+      await addDoc(collection(db, 'orders'), orderData);
+
+      const updatesByProduct = {};
+      cartItems.forEach(cartItem => {
+        if (!updatesByProduct[cartItem.id]) updatesByProduct[cartItem.id] = [];
+        updatesByProduct[cartItem.id].push({ size: cartItem.size, deduct: cartItem.qty });
+      });
+
+      for (const productId of Object.keys(updatesByProduct)) {
+        const productRef = doc(db, 'inventory', productId);
+        const productSnap = await getDoc(productRef);
+        if (productSnap.exists()) {
+          const product = productSnap.data();
+          const newSizes = product.sizes.map(s => {
+            const deduction = updatesByProduct[productId].find(u => u.size === s.size);
+            return deduction ? { ...s, qty: Math.max(0, s.qty - deduction.deduct) } : s;
+          });
+          await updateDoc(productRef, { sizes: newSizes });
+        }
+      }
+      return true;
+    } catch (err) {
+      console.error("Error finalizing order: ", err);
+      return false;
+    }
+  };
+
   // ==========================================
   // قراءة حالة الدفع من بيموب بعد الرجوع للموقع
   // ==========================================
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const isSuccess = urlParams.get('success');
+    const checkPaymentReturn = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const isSuccess = urlParams.get('success');
 
-    if (isSuccess === 'true') {
-      setSuccessMsg('Payment Successful! Your order is placed. 🎉');
-      setActiveView('tracking'); 
-      setTimeout(() => setSuccessMsg(''), 5000);
-      window.history.replaceState(null, '', window.location.pathname);
-    } 
-    else if (isSuccess === 'false') {
-      setErrorMsg('Payment Failed! Please try again. ❌');
-      setTimeout(() => setErrorMsg(''), 5000);
-      window.history.replaceState(null, '', window.location.pathname);
-    }
-  }, []);
-  
+      if (isSuccess === 'true') {
+        // لو الدفع بالفيزا نجح، نسحب الداتا اللي كنا حافظينها ونسجل الأوردر
+        const pendingOrderJson = localStorage.getItem(`pending_order_${userEmail}`);
+        if (pendingOrderJson) {
+          const { orderData, cartItems } = JSON.parse(pendingOrderJson);
+          
+          const success = await finalizeOrderInDB(orderData, cartItems);
+          if (success) {
+            localStorage.removeItem(`pending_order_${userEmail}`);
+            setCart([]);
+            setSuccessMsg('Payment Successful! Your order is placed. 🎉');
+            setActiveView('tracking'); 
+          } else {
+            setErrorMsg('Payment successful, but failed to save order. Contact support.');
+          }
+        }
+        setTimeout(() => setSuccessMsg(''), 5000);
+        window.history.replaceState(null, '', window.location.pathname);
+      } 
+      else if (isSuccess === 'false') {
+        setErrorMsg('Payment Failed! Please try again. ❌');
+        localStorage.removeItem(`pending_order_${userEmail}`); // مسح الأوردر المعلق
+        setTimeout(() => setErrorMsg(''), 5000);
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    };
+
+    checkPaymentReturn();
+  }, [userEmail]);
+
   useEffect(() => {
     localStorage.setItem(`cart_${userEmail}`, JSON.stringify(cart));
   }, [cart, userEmail]);
 
   useEffect(() => {
     if (!userEmail) return;
-
     const q = query(collection(db, 'users'), where('email', '==', userEmail));
     const unsubUser = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
         const userData = snapshot.docs[0].data();
-        if (userData.name) setUserName(userData.name); // سحب الاسم
+        if (userData.name) setUserName(userData.name); 
         if (userData.address) setAddress(userData.address);
         if (userData.phone) setPhone(userData.phone);
-        
-        if (userData.region) {
-          setRegion(userData.region);
-        } else {
-          setRegion(storeLocation || egyptGovernorates[0]);
-        }
+        if (userData.region) { setRegion(userData.region); } else { setRegion(storeLocation || egyptGovernorates[0]); }
       }
     });
-
     return () => unsubUser();
   }, [userEmail, storeLocation]);
 
@@ -104,9 +149,7 @@ const Storefront = ({ shopSettings, userEmail }) => {
       const ordersList = [];
       snapshot.forEach((doc) => {
         const orderData = doc.data();
-        if (orderData.customer === userEmail) {
-          ordersList.push({ id: doc.id, ...orderData });
-        }
+        if (orderData.customer === userEmail) { ordersList.push({ id: doc.id, ...orderData }); }
       });
       setMyOrders(ordersList.sort((a, b) => b.timestamp - a.timestamp));
     });
@@ -114,10 +157,7 @@ const Storefront = ({ shopSettings, userEmail }) => {
     return () => { unsubProducts(); unsubOrders(); };
   }, [userEmail]);
 
-  const triggerError = (msg) => {
-    setErrorMsg(msg);
-    setTimeout(() => setErrorMsg(''), 3000);
-  };
+  const triggerError = (msg) => { setErrorMsg(msg); setTimeout(() => setErrorMsg(''), 3000); };
 
   const handleSizeSelect = (productId, sizeObj) => {
     if (sizeObj.qty > 0) setSelectedSizes({ ...selectedSizes, [productId]: sizeObj });
@@ -161,9 +201,7 @@ const Storefront = ({ shopSettings, userEmail }) => {
         await updateDoc(doc(db, 'orders', confirmModal.data), { status: 'Delivered' });
         setSuccessMsg('Order marked as Delivered!');
         setTimeout(() => setSuccessMsg(''), 3000);
-      } catch (err) {
-        triggerError('Failed to update order status.');
-      }
+      } catch (err) { triggerError('Failed to update order status.'); }
     }
     setConfirmModal({ isOpen: false, type: '', data: null });
   };
@@ -171,10 +209,11 @@ const Storefront = ({ shopSettings, userEmail }) => {
   const cartBaseTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
   const taxAmount = cartBaseTotal * (tax / 100);
   const shippingCost = isDeliveryDisabled ? 0 : (Number(shippingRates[region]) || 0); 
-  const cartFinalTotal = (cartBaseTotal + taxAmount + shippingCost).toFixed(2);
+  const extraCodFee = paymentMethod === 'COD' ? COD_FEE : 0;
+  const cartFinalTotal = (cartBaseTotal + taxAmount + shippingCost + extraCodFee).toFixed(2);
 
   // ==========================================
-  // التعديل: ربط الدفع ببيموب وإنشاء الطلب
+  // زرار الـ Checkout (بيقرر هيدفع إزاي)
   // ==========================================
   const handleCheckout = async () => {
     if (cart.length === 0) return;
@@ -182,79 +221,69 @@ const Storefront = ({ shopSettings, userEmail }) => {
     if (isDeliveryDisabled) return triggerError("عذراً، الشحن غير متوفر لهذه المحافظة حالياً.");
     
     setIsCheckingOut(true);
-    try {
-      // 1. الاتصال بـ Vercel Backend للحصول على الـ Payment Token من بيموب
-      const paymobResponse = await fetch('/api/paymob', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: cartFinalTotal,
-          billingData: {
-            first_name: userName.split(' ')[0] || "Customer",
-            last_name: userName.split(' ').slice(1).join(' ') || "Name",
-            email: userEmail,
-            phone_number: phone || "+201000000000",
-            apartment: "NA", 
-            floor: "NA", 
-            street: address, 
-            building: "NA",
-            city: region,
-            country: "EG"
-          }
-        })
-      });
 
-      const paymobData = await paymobResponse.json();
+    const itemsString = cart.map(item => `${item.name} (${item.size === 'OS' ? 'UNIT' : item.size} x${item.qty})`).join(' | ');
+    const newOrderData = {
+      orderId: `#TC-${Math.floor(1000 + Math.random() * 9000)}`,
+      customer: userEmail,
+      items: itemsString,
+      baseTotal: cartBaseTotal,
+      shippingFee: shippingCost,
+      codFee: extraCodFee,
+      finalTotal: cartFinalTotal,
+      paymentMethod: paymentMethod, // 'COD' or 'Card'
+      status: 'Processing',
+      address, region, deliveryDate,
+      phone: phone || 'Not Provided',
+      date: new Date().toLocaleString(),
+      timestamp: Date.now()
+    };
 
-      if (!paymobData.paymentToken) {
-        throw new Error("فشل في الاتصال ببوابة الدفع بيموب.");
+    if (paymentMethod === 'COD') {
+      // الدفع عند الاستلام: سجل الأوردر فوراً وخصم المخزون
+      const success = await finalizeOrderInDB(newOrderData, cart);
+      if (success) {
+        setCart([]);
+        setSuccessMsg('Order Placed Successfully via COD!');
+        setActiveView('tracking');
+      } else {
+        triggerError('Failed to place order.');
       }
+      setIsCheckingOut(false);
+    } 
+    else {
+      // الدفع بالفيزا: احفظ الداتا مؤقتاً وروح لبيموب
+      try {
+        // حفظ الداتا مؤقتاً عشان نستخدمها لما يرجع من بيموب ناجح
+        localStorage.setItem(`pending_order_${userEmail}`, JSON.stringify({ orderData: newOrderData, cartItems: cart }));
 
-      // 2. تسجيل الأوردر في الداتابيز
-      const itemsString = cart.map(item => `${item.name} (${item.size === 'OS' ? 'UNIT' : item.size} x${item.qty})`).join(' | ');
-      const newOrder = {
-        orderId: `#TC-${Math.floor(1000 + Math.random() * 9000)}`,
-        customer: userEmail,
-        items: itemsString,
-        baseTotal: cartBaseTotal,
-        shippingFee: shippingCost,
-        finalTotal: cartFinalTotal,
-        status: 'Processing', // نقدر نخليها Pending لو حابين، بس Processing مناسبة للمتجر
-        address, region, deliveryDate,
-        phone: phone || 'Not Provided',
-        date: new Date().toLocaleString(),
-        timestamp: Date.now()
-      };
-      await addDoc(collection(db, 'orders'), newOrder);
+        const paymobResponse = await fetch('/api/paymob', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: cartFinalTotal,
+            billingData: {
+              first_name: userName.split(' ')[0] || "Customer",
+              last_name: userName.split(' ').slice(1).join(' ') || "Name",
+              email: userEmail,
+              phone_number: phone || "+201000000000",
+              apartment: "NA", floor: "NA", street: address, building: "NA", city: region, country: "EG"
+            }
+          })
+        });
 
-      // 3. خصم المخزون
-      const updatesByProduct = {};
-      cart.forEach(cartItem => {
-        if (!updatesByProduct[cartItem.id]) updatesByProduct[cartItem.id] = [];
-        updatesByProduct[cartItem.id].push({ size: cartItem.size, deduct: cartItem.qty });
-      });
+        const paymobData = await paymobResponse.json();
+        if (!paymobData.paymentToken) throw new Error("Failed to get payment token.");
 
-      for (const productId of Object.keys(updatesByProduct)) {
-        const product = products.find(p => p.id === productId);
-        if (product) {
-          const newSizes = product.sizes.map(s => {
-            const deduction = updatesByProduct[productId].find(u => u.size === s.size);
-            return deduction ? { ...s, qty: s.qty - deduction.deduct } : s;
-          });
-          await updateDoc(doc(db, 'inventory', productId), { sizes: newSizes });
-        }
+        const iframeId = import.meta.env.VITE_PAYMOB_IFRAME_ID;
+        window.location.href = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymobData.paymentToken}`;
+        
+      } catch (err) { 
+        console.error(err);
+        triggerError('Payment Gateway error. Try again.'); 
+        localStorage.removeItem(`pending_order_${userEmail}`);
+        setIsCheckingOut(false);
       }
-
-      // 4. مسح السلة وتوجيه العميل لصفحة دفع بيموب (Iframe)
-      setCart([]);
-      
-      const iframeId = import.meta.env.VITE_PAYMOB_IFRAME_ID;
-      window.location.href = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymobData.paymentToken}`;
-      
-    } catch (err) { 
-      console.error(err);
-      triggerError('Checkout failed or Payment Gateway error. Try again.'); 
-      setIsCheckingOut(false); // بنرجع الزرار يشتغل لو حصل إيرور
     }
   };
 
@@ -286,7 +315,7 @@ const Storefront = ({ shopSettings, userEmail }) => {
 
       <AnimatePresence>
         {successMsg && (
-          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] bg-blue-600 text-white px-6 py-3 lg:px-8 lg:py-4 rounded-2xl font-black shadow-2xl flex items-center gap-3 text-xs lg:text-sm whitespace-nowrap">
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] bg-green-600 text-white px-6 py-3 lg:px-8 lg:py-4 rounded-2xl font-black shadow-2xl flex items-center gap-3 text-xs lg:text-sm whitespace-nowrap">
             <CheckCircle size={18} /> {successMsg}
           </motion.div>
         )}
@@ -371,7 +400,7 @@ const Storefront = ({ shopSettings, userEmail }) => {
 
       {activeView === 'cart' && (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col lg:flex-row gap-6 lg:gap-8">
-          <div className="flex-1 bg-[#111] rounded-[2.5rem] border border-white/5 p-5 lg:p-8 shadow-2xl">
+          <div className="flex-1 bg-[#111] rounded-[2.5rem] border border-white/5 p-5 lg:p-8 shadow-2xl h-fit">
             <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
               <h2 className="text-xl font-black uppercase italic text-white">Your Cart</h2>
               {cart.length > 0 && (
@@ -411,6 +440,8 @@ const Storefront = ({ shopSettings, userEmail }) => {
 
           {cart.length > 0 && (
             <div className="w-full lg:w-[350px] space-y-6">
+              
+              {/* قسم الديلفري */}
               <div className="bg-[#111] p-6 lg:p-8 rounded-[2.5rem] border border-white/5 shadow-2xl">
                 <h3 className="text-sm font-black uppercase italic text-white mb-5 flex items-center gap-2"><Truck className="text-blue-500" size={16}/> Delivery</h3>
                 <div className="space-y-4">
@@ -471,7 +502,37 @@ const Storefront = ({ shopSettings, userEmail }) => {
                 </div>
               </div>
 
+              {/* قسم اختيار طريقة الدفع */}
               <div className="bg-[#111] p-6 lg:p-8 rounded-[2.5rem] border border-white/5 shadow-2xl">
+                <h3 className="text-sm font-black uppercase italic text-white mb-5 flex items-center gap-2"><CreditCard className="text-blue-500" size={16}/> Payment Method</h3>
+                
+                <div className="space-y-3 mb-6">
+                  <button 
+                    onClick={() => setPaymentMethod('Card')}
+                    className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-all ${paymentMethod === 'Card' ? 'bg-blue-600/10 border-blue-500 text-white' : 'bg-black border-white/5 text-gray-500 hover:border-white/20'}`}
+                  >
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${paymentMethod === 'Card' ? 'border-blue-500' : 'border-gray-600'}`}>
+                      {paymentMethod === 'Card' && <div className="w-2 h-2 bg-blue-500 rounded-full" />}
+                    </div>
+                    <CreditCard size={18} className={paymentMethod === 'Card' ? 'text-blue-500' : ''}/>
+                    <span className="text-xs font-black uppercase tracking-widest text-left flex-1">Pay with Card</span>
+                  </button>
+
+                  <button 
+                    onClick={() => setPaymentMethod('COD')}
+                    className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-all ${paymentMethod === 'COD' ? 'bg-orange-500/10 border-orange-500 text-white' : 'bg-black border-white/5 text-gray-500 hover:border-white/20'}`}
+                  >
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${paymentMethod === 'COD' ? 'border-orange-500' : 'border-gray-600'}`}>
+                      {paymentMethod === 'COD' && <div className="w-2 h-2 bg-orange-500 rounded-full" />}
+                    </div>
+                    <Banknote size={18} className={paymentMethod === 'COD' ? 'text-orange-500' : ''}/>
+                    <div className="text-left flex-1">
+                      <div className="text-xs font-black uppercase tracking-widest">Cash on Delivery</div>
+                      <div className="text-[9px] text-gray-400 mt-1">Extra +{currency} {COD_FEE} Fee</div>
+                    </div>
+                  </button>
+                </div>
+
                 <div className="space-y-2.5 text-[10px] font-black uppercase text-gray-500 mb-5">
                   <div className="flex justify-between"><span>Items</span><span className="text-white">{currency} {cartBaseTotal.toFixed(2)}</span></div>
                   
@@ -481,6 +542,13 @@ const Storefront = ({ shopSettings, userEmail }) => {
                       {isDeliveryDisabled ? 'N/A' : (shippingCost > 0 ? `+${currency} ${shippingCost}` : 'FREE')}
                     </span>
                   </div>
+
+                  {paymentMethod === 'COD' && (
+                    <div className="flex justify-between text-orange-500">
+                      <span>COD Fee</span>
+                      <span>+{currency} {COD_FEE}</span>
+                    </div>
+                  )}
 
                   <div className="h-px bg-white/5 my-3"></div>
                   <div className="flex justify-between text-xl text-blue-500 italic tracking-tighter"><span>TOTAL</span><span>{currency} {isDeliveryDisabled ? '--' : cartFinalTotal}</span></div>
@@ -492,7 +560,7 @@ const Storefront = ({ shopSettings, userEmail }) => {
                   className={`w-full py-4 text-white rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] shadow-2xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 ${isDeliveryDisabled ? 'bg-red-600/50 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
                 >
                   {isCheckingOut ? <Loader className="animate-spin" size={16}/> : (isDeliveryDisabled ? <AlertTriangle size={16}/> : <CheckCircle size={16}/>)} 
-                  {isDeliveryDisabled ? 'Shipping Unavailable' : 'PAY WITH CARD 💳'}
+                  {isDeliveryDisabled ? 'Shipping Unavailable' : (paymentMethod === 'COD' ? 'CONFIRM ORDER' : 'PAY WITH CARD 💳')}
                 </button>
               </div>
             </div>
@@ -515,12 +583,20 @@ const Storefront = ({ shopSettings, userEmail }) => {
                       <div className="text-white font-black text-lg sm:text-xl leading-none mb-1">{o.orderId}</div>
                       <div className="text-gray-500 text-[9px] font-black uppercase tracking-widest">{o.date}</div>
                     </div>
-                    <div className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest border ${
-                      o.status === 'Processing' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 
-                      o.status === 'Shipped' ? 'bg-blue-500/10 border-blue-500/20 text-blue-500' : 
-                      'bg-green-500/10 border-green-500/20 text-green-500'
-                    }`}>
-                      {o.status}
+                    <div className="flex flex-col items-end gap-2">
+                      <div className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest border ${
+                        o.status === 'Processing' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 
+                        o.status === 'Shipped' ? 'bg-blue-500/10 border-blue-500/20 text-blue-500' : 
+                        'bg-green-500/10 border-green-500/20 text-green-500'
+                      }`}>
+                        {o.status}
+                      </div>
+                      
+                      {o.paymentMethod === 'COD' ? (
+                        <div className="text-[8px] text-orange-500 font-black uppercase tracking-widest flex items-center gap-1"><Banknote size={10}/> COD</div>
+                      ) : (
+                        <div className="text-[8px] text-green-500 font-black uppercase tracking-widest flex items-center gap-1"><CreditCard size={10}/> Paid</div>
+                      )}
                     </div>
                   </div>
                   
@@ -557,7 +633,7 @@ const Storefront = ({ shopSettings, userEmail }) => {
               ))}
             </div>
           )}
-        </motion.div>
+        </motion.div>له
       )}
     </div>
   );
