@@ -46,6 +46,26 @@ const Storefront = ({ shopSettings, userEmail }) => {
   const displayedRegions = egyptGovernorates.filter(gov => gov.includes(govSearch));
   const isDeliveryDisabled = disabledRegions.includes(region) || !region;
 
+  // ==========================================
+  // قراءة حالة الدفع من بيموب بعد الرجوع للموقع
+  // ==========================================
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const isSuccess = urlParams.get('success');
+
+    if (isSuccess === 'true') {
+      setSuccessMsg('Payment Successful! Your order is placed. 🎉');
+      setActiveView('tracking'); 
+      setTimeout(() => setSuccessMsg(''), 5000);
+      window.history.replaceState(null, '', window.location.pathname);
+    } 
+    else if (isSuccess === 'false') {
+      setErrorMsg('Payment Failed! Please try again. ❌');
+      setTimeout(() => setErrorMsg(''), 5000);
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
+  
   useEffect(() => {
     localStorage.setItem(`cart_${userEmail}`, JSON.stringify(cart));
   }, [cart, userEmail]);
