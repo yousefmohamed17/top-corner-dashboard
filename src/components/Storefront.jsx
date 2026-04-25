@@ -633,7 +633,7 @@ const Storefront = ({ shopSettings, userEmail }) => {
               ))}
             </div>
           )}
-        </motion.div>له
+        </motion.div>
       )}
     </div>
   );
