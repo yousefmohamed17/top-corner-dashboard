@@ -33,6 +33,7 @@ const Storefront = ({ shopSettings, userEmail }) => {
     return savedCart ? JSON.parse(savedCart) : [];
   });
 
+  const [userName, setUserName] = useState('Customer'); // حالة جديدة لتخزين اسم العميل لبيموب
   const [address, setAddress] = useState('');
   const [region, setRegion] = useState(''); 
   const [phone, setPhone] = useState('');
@@ -42,19 +43,13 @@ const Storefront = ({ shopSettings, userEmail }) => {
     return d.toISOString().split('T')[0];
   });
 
-  // عرض كل المحافظات عشان العميل يشوف اللي متاح واللي مقفول
   const displayedRegions = egyptGovernorates.filter(gov => gov.includes(govSearch));
-  
-  // فحص هل المحافظة محظورة ولا لأ
   const isDeliveryDisabled = disabledRegions.includes(region) || !region;
 
   useEffect(() => {
     localStorage.setItem(`cart_${userEmail}`, JSON.stringify(cart));
   }, [cart, userEmail]);
 
-  // ==========================================
-  // التعديل اللحظي: مراقبة بيانات العميل لايف
-  // ==========================================
   useEffect(() => {
     if (!userEmail) return;
 
@@ -62,10 +57,10 @@ const Storefront = ({ shopSettings, userEmail }) => {
     const unsubUser = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
         const userData = snapshot.docs[0].data();
+        if (userData.name) setUserName(userData.name); // سحب الاسم
         if (userData.address) setAddress(userData.address);
         if (userData.phone) setPhone(userData.phone);
         
-        // المحافظة بتسحب لايف وبتفضل زي ما هي عشان يقدر يشوف التحذير لو محظورة
         if (userData.region) {
           setRegion(userData.region);
         } else {
@@ -158,6 +153,9 @@ const Storefront = ({ shopSettings, userEmail }) => {
   const shippingCost = isDeliveryDisabled ? 0 : (Number(shippingRates[region]) || 0); 
   const cartFinalTotal = (cartBaseTotal + taxAmount + shippingCost).toFixed(2);
 
+  // ==========================================
+  // التعديل: ربط الدفع ببيموب وإنشاء الطلب
+  // ==========================================
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     if (!address.trim()) return triggerError("Please enter your detailed address!");
@@ -165,6 +163,34 @@ const Storefront = ({ shopSettings, userEmail }) => {
     
     setIsCheckingOut(true);
     try {
+      // 1. الاتصال بـ Vercel Backend للحصول على الـ Payment Token من بيموب
+      const paymobResponse = await fetch('/api/paymob', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: cartFinalTotal,
+          billingData: {
+            first_name: userName.split(' ')[0] || "Customer",
+            last_name: userName.split(' ').slice(1).join(' ') || "Name",
+            email: userEmail,
+            phone_number: phone || "+201000000000",
+            apartment: "NA", 
+            floor: "NA", 
+            street: address, 
+            building: "NA",
+            city: region,
+            country: "EG"
+          }
+        })
+      });
+
+      const paymobData = await paymobResponse.json();
+
+      if (!paymobData.paymentToken) {
+        throw new Error("فشل في الاتصال ببوابة الدفع بيموب.");
+      }
+
+      // 2. تسجيل الأوردر في الداتابيز
       const itemsString = cart.map(item => `${item.name} (${item.size === 'OS' ? 'UNIT' : item.size} x${item.qty})`).join(' | ');
       const newOrder = {
         orderId: `#TC-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -173,7 +199,7 @@ const Storefront = ({ shopSettings, userEmail }) => {
         baseTotal: cartBaseTotal,
         shippingFee: shippingCost,
         finalTotal: cartFinalTotal,
-        status: 'Processing',
+        status: 'Processing', // نقدر نخليها Pending لو حابين، بس Processing مناسبة للمتجر
         address, region, deliveryDate,
         phone: phone || 'Not Provided',
         date: new Date().toLocaleString(),
@@ -181,6 +207,7 @@ const Storefront = ({ shopSettings, userEmail }) => {
       };
       await addDoc(collection(db, 'orders'), newOrder);
 
+      // 3. خصم المخزون
       const updatesByProduct = {};
       cart.forEach(cartItem => {
         if (!updatesByProduct[cartItem.id]) updatesByProduct[cartItem.id] = [];
@@ -198,12 +225,17 @@ const Storefront = ({ shopSettings, userEmail }) => {
         }
       }
 
+      // 4. مسح السلة وتوجيه العميل لصفحة دفع بيموب (Iframe)
       setCart([]);
-      setActiveView('tracking');
-      setSuccessMsg('Order Placed Successfully!');
-      setTimeout(() => setSuccessMsg(''), 4000);
-    } catch (err) { triggerError('Checkout failed. Try again.'); }
-    setIsCheckingOut(false);
+      
+      const iframeId = import.meta.env.VITE_PAYMOB_IFRAME_ID;
+      window.location.href = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymobData.paymentToken}`;
+      
+    } catch (err) { 
+      console.error(err);
+      triggerError('Checkout failed or Payment Gateway error. Try again.'); 
+      setIsCheckingOut(false); // بنرجع الزرار يشتغل لو حصل إيرور
+    }
   };
 
   const categories = ['All', ...new Set(products.map(p => p.cat))];
@@ -373,7 +405,6 @@ const Storefront = ({ shopSettings, userEmail }) => {
                       {region || 'Select City'} <ChevronDown size={14} className={`transition-transform duration-300 ${isRegionDropdownOpen ? 'rotate-180' : ''}`} />
                     </button>
                     
-                    {/* تحذير أحمر لو المحافظة مقفولة */}
                     <AnimatePresence>
                       {isDeliveryDisabled && region && (
                         <motion.p initial={{opacity:0, y:-5}} animate={{opacity:1, y:0}} exit={{opacity:0, height:0}} className="text-red-500 text-[9px] font-bold mt-2 flex items-center gap-1.5">
@@ -435,14 +466,13 @@ const Storefront = ({ shopSettings, userEmail }) => {
                   <div className="flex justify-between text-xl text-blue-500 italic tracking-tighter"><span>TOTAL</span><span>{currency} {isDeliveryDisabled ? '--' : cartFinalTotal}</span></div>
                 </div>
                 
-                {/* زرار الدفع محمي ومرتبط بالحظر */}
                 <button 
                   onClick={handleCheckout} 
                   disabled={isCheckingOut || isDeliveryDisabled} 
                   className={`w-full py-4 text-white rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] shadow-2xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 ${isDeliveryDisabled ? 'bg-red-600/50 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
                 >
                   {isCheckingOut ? <Loader className="animate-spin" size={16}/> : (isDeliveryDisabled ? <AlertTriangle size={16}/> : <CheckCircle size={16}/>)} 
-                  {isDeliveryDisabled ? 'Shipping Unavailable' : 'PAY NOW'}
+                  {isDeliveryDisabled ? 'Shipping Unavailable' : 'PAY WITH CARD 💳'}
                 </button>
               </div>
             </div>
