@@ -8,7 +8,8 @@ const egyptGovernorates = [
   "القاهرة", "الإسكندرية", "الجيزة", "الدقهلية", "البحر الأحمر", "البحيرة", "الفيوم", "الغربية", "الإسماعيلية", "المنوفية", "المنيا", "القليوبية", "الوادي الجديد", "الشرقية", "السويس", "أسوان", "أسيوط", "بني سويف", "دمياط", "كفر الشيخ", "مطروح", "الأقصر", "قنا", "شمال سيناء", "جنوب سيناء", "بورسعيد", "سوهاج"
 ];
 
-const COD_FEE = 25; // مصاريف الدفع عند الاستلام
+// التعديل 1: تغيير الثابت إلى SERVICE_FEE
+const SERVICE_FEE = 10; // ضريبة الخدمة للدفع عند الاستلام
 
 const Storefront = ({ shopSettings, userEmail }) => {
   const { 
@@ -110,6 +111,8 @@ const Storefront = ({ shopSettings, userEmail }) => {
       else if (isSuccess === 'false') {
         setErrorMsg('Payment Failed! Please try again. ❌');
         localStorage.removeItem(`pending_order_${userEmail}`); // مسح الأوردر المعلق
+        // التعديل الإضافي: الرجوع للسلة في حالة الفشل
+        setActiveView('cart'); 
         setTimeout(() => setErrorMsg(''), 5000);
         window.history.replaceState(null, '', window.location.pathname);
       }
@@ -209,7 +212,9 @@ const Storefront = ({ shopSettings, userEmail }) => {
   const cartBaseTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
   const taxAmount = cartBaseTotal * (tax / 100);
   const shippingCost = isDeliveryDisabled ? 0 : (Number(shippingRates[region]) || 0); 
-  const extraCodFee = paymentMethod === 'COD' ? COD_FEE : 0;
+  
+  // التعديل 2: تغيير COD_FEE لـ SERVICE_FEE
+  const extraCodFee = paymentMethod === 'COD' ? SERVICE_FEE : 0;
   const cartFinalTotal = (cartBaseTotal + taxAmount + shippingCost + extraCodFee).toFixed(2);
 
   // ==========================================
@@ -229,7 +234,9 @@ const Storefront = ({ shopSettings, userEmail }) => {
       items: itemsString,
       baseTotal: cartBaseTotal,
       shippingFee: shippingCost,
-      codFee: extraCodFee,
+      
+      // التعديل 2 ب: تغيير المسمى في الداتابيز
+      serviceFee: extraCodFee,
       finalTotal: cartFinalTotal,
       paymentMethod: paymentMethod, // 'COD' or 'Card'
       status: 'Processing',
@@ -528,7 +535,8 @@ const Storefront = ({ shopSettings, userEmail }) => {
                     <Banknote size={18} className={paymentMethod === 'COD' ? 'text-orange-500' : ''}/>
                     <div className="text-left flex-1">
                       <div className="text-xs font-black uppercase tracking-widest">Cash on Delivery</div>
-                      <div className="text-[9px] text-gray-400 mt-1">Extra +{currency} {COD_FEE} Fee</div>
+                      {/* التعديل 3: تغيير التكست في الـ UI */}
+                      <div className="text-[9px] text-gray-400 mt-1">Extra +{currency} {SERVICE_FEE} Service Fee</div>
                     </div>
                   </button>
                 </div>
@@ -545,8 +553,9 @@ const Storefront = ({ shopSettings, userEmail }) => {
 
                   {paymentMethod === 'COD' && (
                     <div className="flex justify-between text-orange-500">
-                      <span>COD Fee</span>
-                      <span>+{currency} {COD_FEE}</span>
+                      {/* التعديل 4: تغيير الكلمة في الفاتورة */}
+                      <span>Service Fee</span>
+                      <span>+{currency} {SERVICE_FEE}</span>
                     </div>
                   )}
 
