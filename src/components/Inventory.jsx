@@ -256,20 +256,22 @@ const Inventory = ({ currency, tax }) => {
                         layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key={item.id} 
                         className="flex flex-col lg:table-row bg-[#111] lg:bg-transparent rounded-[2rem] lg:rounded-none border border-white/5 lg:border-0 hover:bg-blue-600/[0.03] transition-colors group p-6 lg:p-0 shadow-lg lg:shadow-none"
                       >
-                        {/* 1. Product Info */}
-                        <td className="p-0 lg:p-6 mb-6 lg:mb-0 lg:border-b lg:border-white/5 flex items-start gap-5">
-                          <img src={item.image} className="w-16 h-16 rounded-2xl object-cover border-2 border-white/5 group-hover:border-blue-600 transition-all shadow-lg shrink-0 mt-1" alt={item.name} />
-                          <div className="flex-1">
-                            <div className="text-white text-lg lg:text-xl font-bold uppercase transition-colors group-hover:text-blue-500 leading-tight flex items-center gap-2 flex-wrap mb-1.5">
-                              <span className="line-clamp-1">{item.name}</span>
-                              {item.isBestSeller && <span className="bg-orange-500/10 text-orange-500 border border-orange-500/20 text-[9px] px-2 py-0.5 rounded flex items-center gap-1 shrink-0"><Flame size={10}/> Best</span>}
+                        {/* 1. Product Info - Fixed layout alignment */}
+                        <td className="p-0 lg:p-6 mb-6 lg:mb-0 lg:border-b lg:border-white/5 block lg:table-cell lg:align-middle">
+                          <div className="flex items-start gap-5">
+                            <img src={item.image} className="w-16 h-16 rounded-2xl object-cover border-2 border-white/5 group-hover:border-blue-600 transition-all shadow-lg shrink-0 mt-1" alt={item.name} />
+                            <div className="flex-1">
+                              <div className="text-white text-lg lg:text-xl font-bold uppercase transition-colors group-hover:text-blue-500 leading-tight flex items-center gap-2 flex-wrap mb-1.5">
+                                <span className="line-clamp-1">{item.name}</span>
+                                {item.isBestSeller && <span className="bg-orange-500/10 text-orange-500 border border-orange-500/20 text-[9px] px-2 py-0.5 rounded flex items-center gap-1 shrink-0"><Flame size={10}/> Best</span>}
+                              </div>
+                              <div className="text-[10px] text-gray-600 uppercase font-black tracking-widest bg-black border border-white/5 px-2.5 py-1 rounded-lg inline-block">{item.cat}</div>
                             </div>
-                            <div className="text-[10px] text-gray-600 uppercase font-black tracking-widest bg-black border border-white/5 px-2.5 py-1 rounded-lg inline-block">{item.cat}</div>
                           </div>
                         </td>
                         
                         {/* 2. Stock Config */}
-                        <td className="p-0 lg:p-6 mb-6 lg:mb-0 lg:border-b lg:border-white/5">
+                        <td className="p-0 lg:p-6 mb-6 lg:mb-0 lg:border-b lg:border-white/5 block lg:table-cell lg:align-middle">
                           <div className="text-[10px] text-gray-500 uppercase font-black mb-3 lg:hidden tracking-widest">Stock Config:</div>
                           <div className="flex flex-wrap gap-3">
                             {(item.sizes || []).map((s, idx) => (
@@ -289,7 +291,7 @@ const Inventory = ({ currency, tax }) => {
                         </td>
 
                         {/* 3. Total Status */}
-                        <td className="p-0 lg:p-6 mb-4 lg:mb-0 lg:border-b lg:border-white/5 flex justify-between items-center lg:table-cell lg:text-center">
+                        <td className="p-0 lg:p-6 mb-4 lg:mb-0 lg:border-b lg:border-white/5 flex justify-between items-center lg:table-cell lg:align-middle lg:text-center block">
                           <div className="text-[10px] text-gray-500 uppercase font-black lg:hidden tracking-widest">Status:</div>
                           <div className={`px-4 py-2 lg:px-4 lg:py-2 rounded-xl text-[11px] font-black inline-flex items-center gap-2 ${total < 15 ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-green-500/10 text-green-500 border border-green-500/20'}`}>
                             {total < 15 ? <AlertTriangle size={14} /> : <CheckCircle size={14} />}
@@ -298,7 +300,7 @@ const Inventory = ({ currency, tax }) => {
                         </td>
 
                         {/* 4. Price */}
-                        <td className="p-0 lg:p-6 mb-6 lg:mb-0 lg:border-b lg:border-white/5 flex justify-between items-center lg:table-cell lg:text-center">
+                        <td className="p-0 lg:p-6 mb-6 lg:mb-0 lg:border-b lg:border-white/5 flex justify-between items-center lg:table-cell lg:align-middle lg:text-center block">
                           <div className="text-[10px] text-gray-500 uppercase font-black lg:hidden tracking-widest">Price:</div>
                           <div className="text-right lg:text-center">
                             <div className="text-white font-black text-xl">{currency} {item.price}</div>
@@ -307,7 +309,7 @@ const Inventory = ({ currency, tax }) => {
                         </td>
 
                         {/* 5. Actions */}
-                        <td className="p-0 lg:p-6 pt-5 lg:pt-6 border-t border-white/5 lg:border-t-0 lg:border-b lg:border-white/5">
+                        <td className="p-0 lg:p-6 pt-5 lg:pt-6 border-t border-white/5 lg:border-t-0 lg:border-b lg:border-white/5 block lg:table-cell lg:align-middle">
                           <div className="flex justify-end lg:justify-center gap-3">
                             <button onClick={() => handleEditClick(item)} className="text-gray-500 hover:text-blue-500 p-3 lg:p-3 transition-all hover:bg-blue-500/10 rounded-xl flex-1 lg:flex-none flex justify-center bg-black lg:bg-transparent border border-white/5 lg:border-0"><Pencil size={18} className="lg:w-5 lg:h-5" /></button>
                             <button onClick={() => deleteItem(item.id)} className="text-gray-700 hover:text-red-600 p-3 lg:p-3 transition-all hover:bg-red-600/10 rounded-xl flex-1 lg:flex-none flex justify-center bg-black lg:bg-transparent border border-white/5 lg:border-0"><Trash2 size={18} className="lg:w-5 lg:h-5" /></button>
