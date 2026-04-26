@@ -8,7 +8,6 @@ const egyptGovernorates = [
   "القاهرة", "الإسكندرية", "الجيزة", "الدقهلية", "البحر الأحمر", "البحيرة", "الفيوم", "الغربية", "الإسماعيلية", "المنوفية", "المنيا", "القليوبية", "الوادي الجديد", "الشرقية", "السويس", "أسوان", "أسيوط", "بني سويف", "دمياط", "كفر الشيخ", "مطروح", "الأقصر", "قنا", "شمال سيناء", "جنوب سيناء", "بورسعيد", "سوهاج"
 ];
 
-// التعديل 1: تغيير الثابت إلى SERVICE_FEE
 const SERVICE_FEE = 10; // ضريبة الخدمة للدفع عند الاستلام
 
 const Storefront = ({ shopSettings, userEmail }) => {
@@ -51,7 +50,6 @@ const Storefront = ({ shopSettings, userEmail }) => {
   const displayedRegions = egyptGovernorates.filter(gov => gov.includes(govSearch));
   const isDeliveryDisabled = disabledRegions.includes(region) || !region;
 
-  // دالة تسجيل الأوردر الفعلي وخصم المخزون (عشان نستخدمها في الـ COD وفي الـ Callback بتاع الفيزا)
   const finalizeOrderInDB = async (orderData, cartItems) => {
     try {
       await addDoc(collection(db, 'orders'), orderData);
@@ -81,16 +79,12 @@ const Storefront = ({ shopSettings, userEmail }) => {
     }
   };
 
-  // ==========================================
-  // قراءة حالة الدفع من بيموب بعد الرجوع للموقع
-  // ==========================================
   useEffect(() => {
     const checkPaymentReturn = async () => {
       const urlParams = new URLSearchParams(window.location.search);
       const isSuccess = urlParams.get('success');
 
       if (isSuccess === 'true') {
-        // لو الدفع بالفيزا نجح، نسحب الداتا اللي كنا حافظينها ونسجل الأوردر
         const pendingOrderJson = localStorage.getItem(`pending_order_${userEmail}`);
         if (pendingOrderJson) {
           const { orderData, cartItems } = JSON.parse(pendingOrderJson);
@@ -110,8 +104,7 @@ const Storefront = ({ shopSettings, userEmail }) => {
       } 
       else if (isSuccess === 'false') {
         setErrorMsg('Payment Failed! Please try again. ❌');
-        localStorage.removeItem(`pending_order_${userEmail}`); // مسح الأوردر المعلق
-        // التعديل الإضافي: الرجوع للسلة في حالة الفشل
+        localStorage.removeItem(`pending_order_${userEmail}`); 
         setActiveView('cart'); 
         setTimeout(() => setErrorMsg(''), 5000);
         window.history.replaceState(null, '', window.location.pathname);
@@ -212,14 +205,9 @@ const Storefront = ({ shopSettings, userEmail }) => {
   const cartBaseTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
   const taxAmount = cartBaseTotal * (tax / 100);
   const shippingCost = isDeliveryDisabled ? 0 : (Number(shippingRates[region]) || 0); 
-  
-  // التعديل 2: تغيير COD_FEE لـ SERVICE_FEE
   const extraCodFee = paymentMethod === 'COD' ? SERVICE_FEE : 0;
   const cartFinalTotal = (cartBaseTotal + taxAmount + shippingCost + extraCodFee).toFixed(2);
 
-  // ==========================================
-  // زرار الـ Checkout (بيقرر هيدفع إزاي)
-  // ==========================================
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     if (!address.trim()) return triggerError("Please enter your detailed address!");
@@ -234,11 +222,9 @@ const Storefront = ({ shopSettings, userEmail }) => {
       items: itemsString,
       baseTotal: cartBaseTotal,
       shippingFee: shippingCost,
-      
-      // التعديل 2 ب: تغيير المسمى في الداتابيز
       serviceFee: extraCodFee,
       finalTotal: cartFinalTotal,
-      paymentMethod: paymentMethod, // 'COD' or 'Card'
+      paymentMethod: paymentMethod, 
       status: 'Processing',
       address, region, deliveryDate,
       phone: phone || 'Not Provided',
@@ -247,7 +233,6 @@ const Storefront = ({ shopSettings, userEmail }) => {
     };
 
     if (paymentMethod === 'COD') {
-      // الدفع عند الاستلام: سجل الأوردر فوراً وخصم المخزون
       const success = await finalizeOrderInDB(newOrderData, cart);
       if (success) {
         setCart([]);
@@ -259,9 +244,7 @@ const Storefront = ({ shopSettings, userEmail }) => {
       setIsCheckingOut(false);
     } 
     else {
-      // الدفع بالفيزا: احفظ الداتا مؤقتاً وروح لبيموب
       try {
-        // حفظ الداتا مؤقتاً عشان نستخدمها لما يرجع من بيموب ناجح
         localStorage.setItem(`pending_order_${userEmail}`, JSON.stringify({ orderData: newOrderData, cartItems: cart }));
 
         const paymobResponse = await fetch('/api/paymob', {
@@ -407,7 +390,7 @@ const Storefront = ({ shopSettings, userEmail }) => {
 
       {activeView === 'cart' && (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col lg:flex-row gap-6 lg:gap-8">
-          <div className="flex-1 bg-[#111] rounded-[2.5rem] border border-white/5 p-5 lg:p-8 shadow-2xl h-fit">
+          <div className="flex-1 bg-[#111] rounded-[2.5rem] border border-white/5 p-4 sm:p-5 lg:p-8 shadow-2xl h-fit">
             <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
               <h2 className="text-xl font-black uppercase italic text-white">Your Cart</h2>
               {cart.length > 0 && (
@@ -424,21 +407,23 @@ const Storefront = ({ shopSettings, userEmail }) => {
             ) : (
               <div className="space-y-4">
                 {cart.map((item, index) => (
-                  <div key={index} className="flex items-center gap-4 bg-black p-3 rounded-2xl border border-white/5 relative group">
-                    <img src={item.image} className="w-16 h-16 object-cover rounded-xl" />
-                    <div className="flex-1 pr-6">
+                  // التعديل هنا: استخدام gap-3 وتقليل هوامش الموبايل مع flex-wrap
+                  <div key={index} className="flex items-center gap-3 sm:gap-4 bg-black p-3 rounded-2xl border border-white/5 relative group pr-10 sm:pr-6">
+                    <img src={item.image} className="w-14 h-14 sm:w-16 sm:h-16 object-cover rounded-xl shrink-0" />
+                    <div className="flex-1 min-w-0">
                       <h4 className="text-white font-black italic uppercase text-xs mb-1 line-clamp-1">{item.name}</h4>
                       <p className="text-[9px] text-blue-500 font-black mb-2">SIZE: {item.size === 'OS' ? 'UNIT' : item.size}</p>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 bg-[#111] px-2 py-1 rounded-lg border border-white/5">
+                      
+                      <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2">
+                        <div className="flex items-center gap-1 sm:gap-2 bg-[#111] px-1.5 sm:px-2 py-1 rounded-lg border border-white/5 shrink-0">
                           <button onClick={() => updateCartQty(index, -1)} className="text-gray-500 hover:text-white p-1"><Minus size={12}/></button>
                           <span className="text-white font-black text-[11px] w-4 text-center">{item.qty}</span>
                           <button onClick={() => updateCartQty(index, 1)} className="text-gray-500 hover:text-white p-1"><Plus size={12}/></button>
                         </div>
-                        <span className="text-white font-black text-xs">{currency} {(item.price * item.qty * (1 + tax / 100)).toFixed(2)}</span>
+                        <span className="text-white font-black text-[10px] sm:text-xs whitespace-nowrap">{currency} {(item.price * item.qty * (1 + tax / 100)).toFixed(2)}</span>
                       </div>
                     </div>
-                    <button onClick={() => setCart(cart.filter((_, i) => i !== index))} className="absolute top-3 right-3 text-gray-600 hover:text-red-500 transition-colors bg-[#111] p-1.5 rounded-lg"><X size={14}/></button>
+                    <button onClick={() => setCart(cart.filter((_, i) => i !== index))} className="absolute top-3 right-3 text-gray-600 hover:text-red-500 transition-colors bg-[#111] p-1.5 rounded-lg shrink-0"><X size={14}/></button>
                   </div>
                 ))}
               </div>
@@ -448,7 +433,6 @@ const Storefront = ({ shopSettings, userEmail }) => {
           {cart.length > 0 && (
             <div className="w-full lg:w-[350px] space-y-6">
               
-              {/* قسم الديلفري */}
               <div className="bg-[#111] p-6 lg:p-8 rounded-[2.5rem] border border-white/5 shadow-2xl">
                 <h3 className="text-sm font-black uppercase italic text-white mb-5 flex items-center gap-2"><Truck className="text-blue-500" size={16}/> Delivery</h3>
                 <div className="space-y-4">
@@ -509,7 +493,6 @@ const Storefront = ({ shopSettings, userEmail }) => {
                 </div>
               </div>
 
-              {/* قسم اختيار طريقة الدفع */}
               <div className="bg-[#111] p-6 lg:p-8 rounded-[2.5rem] border border-white/5 shadow-2xl">
                 <h3 className="text-sm font-black uppercase italic text-white mb-5 flex items-center gap-2"><CreditCard className="text-blue-500" size={16}/> Payment Method</h3>
                 
@@ -535,7 +518,6 @@ const Storefront = ({ shopSettings, userEmail }) => {
                     <Banknote size={18} className={paymentMethod === 'COD' ? 'text-orange-500' : ''}/>
                     <div className="text-left flex-1">
                       <div className="text-xs font-black uppercase tracking-widest">Cash on Delivery</div>
-                      {/* التعديل 3: تغيير التكست في الـ UI */}
                       <div className="text-[9px] text-gray-400 mt-1">Extra +{currency} {SERVICE_FEE} Service Fee</div>
                     </div>
                   </button>
@@ -553,7 +535,6 @@ const Storefront = ({ shopSettings, userEmail }) => {
 
                   {paymentMethod === 'COD' && (
                     <div className="flex justify-between text-orange-500">
-                      {/* التعديل 4: تغيير الكلمة في الفاتورة */}
                       <span>Service Fee</span>
                       <span>+{currency} {SERVICE_FEE}</span>
                     </div>
